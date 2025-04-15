@@ -4,7 +4,7 @@ use axconfig::{PHYS_VIRT_OFFSET, TASK_STACK_SIZE};
 
 #[link_section = ".bss.stack"]
 static mut BOOT_STACK: [u8; TASK_STACK_SIZE] = [0; TASK_STACK_SIZE];
-
+#[feature(asm_const)]
 #[link_section = ".data.boot_page_table"]
 static mut BOOT_PT_SV39: [u64; 512] = [0; 512];
 

@@ -1,0 +1,114 @@
+name: auto-grading
+
+on: [push]
+
+env:
+  CARGO_TERM_COLOR: always
+  rust_toolchain: nightly
+
+jobs:
+  basic-test:
+    if: github.repository != 'arceos-org/oscamp'
+    runs-on: ubuntu-latest
+    env:
+      PATH: /opt/musl/x86_64-linux-musl-cross/bin:/opt/musl/aarch64-linux-musl-cross/bin:/opt/musl/riscv64-linux-musl-cross/bin:$HOME/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+    outputs:
+      basic_points: ${{ steps.basic_points.outputs.basic_points}}
+    steps:
+      - name: basic test check 
+        uses: actions/checkout@v4
+        
+      - name: install dependencies
+        run: |
+          sudo apt-get update 
+          sudo apt-get install -y \
+            wget \
+            xxd \
+            curl \
+            gcc \
+            g++ \
+            make \
+            libclang-dev \
+            qemu-system-misc \
+            bash \
+            sudo \
+            git \
+            dosfstools \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libz-dev \
+            libclang-dev
+
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source "$HOME/.cargo/env"
+          cargo install cargo-binutils
+
+          mkdir -p /opt/musl && cd /opt/musl
+          wget https://musl.cc/aarch64-linux-musl-cross.tgz
+          wget https://musl.cc/riscv64-linux-musl-cross.tgz
+          wget https://musl.cc/x86_64-linux-musl-cross.tgz
+          tar zxf aarch64-linux-musl-cross.tgz
+          tar zxf riscv64-linux-musl-cross.tgz
+          tar zxf x86_64-linux-musl-cross.tgz
+
+          qemu-system-riscv64 --version
+
+
+      - name: Run basic
+        id : basic_points
+        run: |
+          qemu-system-riscv64 --version
+          source $HOME/.cargo/env
+
+          cargo --version
+          chmod -R +x scripts/
+          
+          ./scripts/total-test.sh > tmp.txt
+          score=$(cat tmp.txt | tail -n1)
+          echo $score
+          rm tmp.txt -f
+          echo "basic_points=$score" >> $GITHUB_OUTPUT
+
+  deploy:
+    if: github.repository != 'arceos-org/oscamp'
+    name: Report Score to Server
+    needs:  basic-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name : Deploy basic to pages
+        env : 
+          course_id: ${{ secrets.ARCEOS_2025_SPRING_COURSE_ID }}
+          post_api: ${{ secrets.ARCEOS_2025_SPRING_POST_API }}
+          token: ${{ secrets.ARCEOS_2025_SPRING_TOKEN }}
+          github_user: ${{ github.actor }}
+          basic_score: ${{ needs.basic-test.outputs.basic_points }}
+        run : |
+          echo "Basic: $basic_score"
+
+          total_score=600
+
+          score_json=$(jq -n \
+            --arg channel "github" \
+            --arg courseId "$course_id" \
+            --arg name "$github_user" \
+            --arg score "$basic_score" \
+            --arg totalScore "$total_score" \
+            --arg ext "{}" \
+            '{channel: $channel, courseId: $courseId, name: $name, score: ($score | tonumber), totalScore: ($totalScore | tonumber), ext: $ext}')
+
+          
+          response=$(curl -X POST "$post_api" \
+            -H "accept: application/json;charset=utf-8" \
+            -H "Content-Type: application/json" \
+            -H "token: $token" \
+            -d "$score_json" \
+            -s)
+
+          if echo "$response" | grep -q '"result":1'; then
+            echo "成功：测试数据已发送"
+          else
+            echo "失败：接口返回异常"
+            exit 1
+          fi
