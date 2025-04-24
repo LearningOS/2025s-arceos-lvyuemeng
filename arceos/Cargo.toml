@@ -49,6 +49,8 @@ members = [
     "tour/h_3_0",
     "tour/h_4_0",
 
+    "examples/shell",
+
     "exercises/print_with_color",
     "exercises/support_hashmap",
     "exercises/alt_alloc",

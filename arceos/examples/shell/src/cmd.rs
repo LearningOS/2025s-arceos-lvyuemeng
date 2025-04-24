@@ -27,6 +27,8 @@ const CMD_TABLE: &[(&str, CmdHandler)] = &[
     ("pwd", do_pwd),
     ("rm", do_rm),
     ("uname", do_uname),
+    ("mv",do_mv),
+    ("rename",do_rename),
 ];
 
 fn file_type_to_char(ty: FileType) -> char {
@@ -222,6 +224,47 @@ fn do_rm(args: &str) {
         if let Err(e) = rm_one(path, rm_dir) {
             print_err!("rm", format_args!("cannot remove '{path}'"), e);
         }
+    }
+}
+
+fn do_mv(args:&str) {
+    if args.is_empty() {
+        print_err!("mv", "missing operand");
+        return;
+    }
+
+    let args = args.split_whitespace().take(2).collect::<Vec<_>>();
+    let src = args[0];
+    let dst = args[1];
+    
+    fn mv_one(src: &str, dst: &str) -> io::Result<()> {
+        let data = fs::read(src)?;
+        fs::write(dst, data)?;
+        fs::remove_file(src)?;
+        Ok(())
+    }
+    
+    if let Err(e) = mv_one(src, dst) {
+        print_err!("mv", format_args!("cannot move '{src}' to '{dst}'"), e);
+    }
+}
+
+fn do_rename(args:&str) {
+    if args.is_empty() {
+        print_err!("rename", "missing operand");
+        return;
+    }
+
+    let args = args.split_whitespace().take(2).collect::<Vec<_>>();
+    let src = args[0];
+    let dst = args[1];
+    
+    fn rename_one(src: &str, dst: &str) -> io::Result<()> {
+        fs::rename(src, dst)
+    }
+    
+    if let Err(e) = rename_one(src, dst) {
+        print_err!("rename", format_args!("cannot move '{src}' to '{dst}'"), e);
     }
 }
 
