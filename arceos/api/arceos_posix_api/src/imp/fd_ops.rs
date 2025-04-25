@@ -15,6 +15,8 @@ pub const AX_FILE_LIMIT: usize = 1024;
 pub trait FileLike: Send + Sync {
     fn read(&self, buf: &mut [u8]) -> LinuxResult<usize>;
     fn write(&self, buf: &[u8]) -> LinuxResult<usize>;
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> LinuxResult<usize>;
+    fn write_at(&self, offset: u64, buf: &[u8]) -> LinuxResult<usize>;
     fn stat(&self) -> LinuxResult<ctypes::stat>;
     fn into_any(self: Arc<Self>) -> Arc<dyn core::any::Any + Send + Sync>;
     fn poll(&self) -> LinuxResult<PollState>;

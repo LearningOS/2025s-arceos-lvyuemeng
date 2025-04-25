@@ -10,6 +10,7 @@ axhal = { workspace = true, features = ["uspace"] }
 axsync = { workspace = true }
 axtask = { workspace = true }
 axlog = { workspace = true }
+axfs = {workspace = true}
 elf = { workspace = true }
 axerrno = "0.1"
 linkme = "0.3"
