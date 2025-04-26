@@ -70,6 +70,19 @@ impl DirNode {
 }
 
 impl VfsNodeOps for DirNode {
+    fn rename(&self, src_path:&str,dst_path:&str) -> VfsResult<()> {
+        log::debug!("rename ....");
+        self.create(dst_path, VfsNodeType::File)?;
+        let src_node = self.children.read().get(src_path).cloned().ok_or(VfsError::NotFound)?;
+        let dst_node = self.children.read().get(dst_path).cloned().ok_or(VfsError::NotFound)?;
+        // Assume 4k
+        let mut buf = [0; 4096];
+        src_node.read_at(0, &mut buf)?;
+        dst_node.write_at(0, &buf)?;
+        self.remove_node(src_path)?;
+        Ok(())
+    }
+
     fn get_attr(&self) -> VfsResult<VfsNodeAttr> {
         Ok(VfsNodeAttr::new_dir(4096, 0))
     }
@@ -164,8 +177,6 @@ impl VfsNodeOps for DirNode {
             self.remove_node(name)
         }
     }
-
-    axfs_vfs::impl_vfs_dir_default! {}
 }
 
 fn split_path(path: &str) -> (&str, Option<&str>) {
