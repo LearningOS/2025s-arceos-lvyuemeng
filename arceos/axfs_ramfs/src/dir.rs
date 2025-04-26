@@ -6,6 +6,7 @@ use axfs_vfs::{VfsDirEntry, VfsNodeAttr, VfsNodeOps, VfsNodeRef, VfsNodeType};
 use axfs_vfs::{VfsError, VfsResult};
 use spin::RwLock;
 
+use crate::alloc::string::ToString;
 use crate::file::FileNode;
 
 /// The directory node in the RAM filesystem.
@@ -70,16 +71,34 @@ impl DirNode {
 }
 
 impl VfsNodeOps for DirNode {
-    fn rename(&self, src_path:&str,dst_path:&str) -> VfsResult<()> {
-        log::debug!("rename ....");
-        self.create(dst_path, VfsNodeType::File)?;
-        let src_node = self.children.read().get(src_path).cloned().ok_or(VfsError::NotFound)?;
-        let dst_node = self.children.read().get(dst_path).cloned().ok_or(VfsError::NotFound)?;
-        // Assume 4k
-        let mut buf = [0; 4096];
+    fn rename(&self, src_path: &str, dst_path: &str) -> VfsResult {
+        // Really weird!!!
+        let src_path = strip_tmp(src_path);
+        let dst_path = strip_tmp(dst_path);
+        log::debug!("rename {:?} to {:?} at ramfs", src_path, dst_path);
+
+        let this = self.this.upgrade().ok_or(VfsError::NotFound)?;
+        let src_node = this.clone().lookup(src_path)?;
+        log::debug!(
+            "src_node: {:#?} at path: {}",
+            src_node.get_attr()?.file_type(),
+            src_path
+        );
+
+        this.clone().create(dst_path, VfsNodeType::File)?;
+        log::debug!(
+            "create dst_node: {:#?} at path: {}",
+            src_node.get_attr()?.file_type(),
+            dst_path
+        );
+        let dst_node = this.lookup(dst_path)?;
+
+        let mut buf = [0; 1024];
         src_node.read_at(0, &mut buf)?;
-        dst_node.write_at(0, &buf)?;
-        self.remove_node(src_path)?;
+        log::debug!("read src_node content: {:?}", &buf[..]);
+        dst_node.write_at(0, &buf[..])?;
+        log::debug!("write dst_node content: {:?}", &buf[..]);
+
         Ok(())
     }
 
@@ -92,6 +111,7 @@ impl VfsNodeOps for DirNode {
     }
 
     fn lookup(self: Arc<Self>, path: &str) -> VfsResult<VfsNodeRef> {
+        log::debug!("lookup at ramfs: {}", path);
         let (name, rest) = split_path(path);
         let node = match name {
             "" | "." => Ok(self.clone() as VfsNodeRef),
@@ -134,19 +154,21 @@ impl VfsNodeOps for DirNode {
         log::debug!("create {:?} at ramfs: {}", ty, path);
         let (name, rest) = split_path(path);
         if let Some(rest) = rest {
-            match name {
-                "" | "." => self.create(rest, ty),
-                ".." => self.parent().ok_or(VfsError::NotFound)?.create(rest, ty),
+            let next_dir = match name {
+                "" | "." => self.this.upgrade().ok_or(VfsError::NotFound)?,
+                ".." => self.parent().ok_or(VfsError::NotFound)?,
                 _ => {
-                    let subdir = self
-                        .children
-                        .read()
-                        .get(name)
-                        .ok_or(VfsError::NotFound)?
-                        .clone();
-                    subdir.create(rest, ty)
+                    let mut children = self.children.write();
+                    children
+                        .entry(name.to_string())
+                        .or_insert_with(|| DirNode::new(Some(self.this.clone())) as VfsNodeRef)
+                        .clone()
                 }
+            };
+            if !next_dir.get_attr()?.is_dir() {
+                return Err(VfsError::NotADirectory);
             }
+            next_dir.create(rest, ty)
         } else if name.is_empty() || name == "." || name == ".." {
             Ok(()) // already exists
         } else {
@@ -184,4 +206,8 @@ fn split_path(path: &str) -> (&str, Option<&str>) {
     trimmed_path.find('/').map_or((trimmed_path, None), |n| {
         (&trimmed_path[..n], Some(&trimmed_path[n + 1..]))
     })
+}
+
+fn strip_tmp(path: &str) -> &str {
+    path.trim_start_matches("/tmp/")
 }
